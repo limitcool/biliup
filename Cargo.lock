@@ -126,16 +126,21 @@ dependencies = [
  "async-recursion",
  "async-trait",
  "biliup 0.1.9",
+ "cookie 0.15.1",
+ "cookie_store 0.16.1",
  "downloader",
+ "futures",
  "indicatif 0.16.2",
  "regex",
  "reqwest",
  "reqwest-middleware",
  "reqwest-retry",
+ "reqwest_cookie_store 0.3.0",
  "rusqlite",
  "rustube",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "serde_yaml",
  "tokio",
  "tokio-stream",
@@ -166,7 +171,7 @@ dependencies = [
  "reqwest",
  "reqwest-middleware",
  "reqwest-retry",
- "reqwest_cookie_store",
+ "reqwest_cookie_store 0.2.0",
  "rsa",
  "serde",
  "serde_json",
@@ -1754,6 +1759,19 @@ dependencies = [
  "bytes",
  "cookie 0.15.1",
  "cookie_store 0.15.1",
+ "reqwest",
+ "url",
+]
+
+[[package]]
+name = "reqwest_cookie_store"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fc7d9a4063adcdfbb061aa3011b813cce95d3a8990f9ccb5ea85017916a1b0b"
+dependencies = [
+ "bytes",
+ "cookie 0.16.0",
+ "cookie_store 0.16.1",
  "reqwest",
  "url",
 ]

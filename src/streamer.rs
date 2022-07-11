@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
-use std::{error::Error, time::Duration, hash::Hash, collections::HashMap};
+use std::{error::Error, time::Duration, collections::HashMap};
 
 #[derive(Debug, Clone, Default)]
 pub struct VideoInfo {

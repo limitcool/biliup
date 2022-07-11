@@ -1,44 +1,15 @@
 use config::Config;
+use futures::StreamExt;
 use regex::Regex;
 use rusqlite::{Connection, Result};
 use std::{collections::HashMap, error::Error, path::Path};
 use streamer::Streamers;
-use tokio_stream::StreamExt;
 mod config;
 mod streamer;
 mod upload;
 mod youtube;
 #[tokio::main]
 async fn main() {
-    let conn = Connection::open("./biliup.db").unwrap();
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS streamers (
-            id INTEGER PRIMARY KEY,
-            author TEXT NOT NULL UNIQUE
-        )",
-        [],
-    )
-    .unwrap();
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS videos (
-            id INTEGER PRIMARY KEY,
-            streamer_author TEXT NOT NULL,
-            title TEXT NOT NULL,
-            url TEXT NOT NULL,
-            platform TEXT NOT NULL,
-            video_id TEXT NOT NULL,
-            bv_id TEXT NOT NULL,
-            aid TEXT NOT NULL,
-            biliup_message TEXT NOT NULL,
-            biliup_code TEXT NOT NULL,
-            created_at TIMESTAMP NOT NULL DEFAULT (datetime('now','localtime')),
-            updated_at TIMESTAMP NOT NULL DEFAULT (datetime('now','localtime')),
-            UNIQUE (title, url,video_id),
-            FOREIGN KEY(streamer_author) REFERENCES streamers(author)
-        )",
-        [],
-    )
-    .unwrap();
     let cfg = load_config(Path::new("config.yaml")).unwrap();
     // let mut r = youtube::Youtube {
     //     client: streamer::new_client(),
@@ -47,11 +18,44 @@ async fn main() {
     //     visitor_data: HashMap::new(),
     //     info: upload::new(),
     // };
-    let mut streamers = tokio_stream::iter(cfg.streamers.iter()).take(3);
-    while let Some(v) = streamers.next().await {
-        // 如果记录不存在,就插入,已经存在不插入
-        conn.execute("INSERT OR IGNORE INTO streamers (author) VALUES (?1)", [v.0]).unwrap();
+    let streamers = tokio_stream::iter(cfg.streamers.iter());
 
+    streamers.for_each_concurrent(2, |v|  async move {
+        let conn = Connection::open("./biliup.db").unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS streamers (
+                id INTEGER PRIMARY KEY,
+                author TEXT NOT NULL UNIQUE
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS videos (
+                id INTEGER PRIMARY KEY,
+                streamer_author TEXT NOT NULL,
+                title TEXT NOT NULL,
+                url TEXT NOT NULL,
+                platform TEXT NOT NULL,
+                video_id TEXT NOT NULL,
+                bv_id TEXT NOT NULL,
+                aid TEXT NOT NULL,
+                biliup_message TEXT NOT NULL,
+                biliup_code TEXT NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT (datetime('now','localtime')),
+                updated_at TIMESTAMP NOT NULL DEFAULT (datetime('now','localtime')),
+                UNIQUE (url,video_id),
+                FOREIGN KEY(streamer_author) REFERENCES streamers(author)
+            )",
+            [],
+        )
+        .unwrap();
+        // 如果记录不存在,就插入,已经存在不插入
+        conn.execute(
+            "INSERT OR IGNORE INTO streamers (author) VALUES (?1)",
+            [v.0],
+        )
+        .unwrap();
         let mut r = youtube::Youtube {
             client: streamer::new_client(),
             channel_id: v.1.url.clone(),
@@ -59,24 +63,26 @@ async fn main() {
             visitor_data: HashMap::new(),
             info: upload::new(),
         };
-        r.get_new_videos().await.unwrap();
-        r.ytdlp_download().await.unwrap();
-        let resp = upload::bili_upload(r.info).await.unwrap();
-        conn.execute(
-            "INSERT INTO videos (streamer_author,title,url,platform,video_id,bv_id,aid,biliup_message,biliup_code) VALUES (?,?,?,?,?,?,?,?,?)",
-            &[
-                v.0,
-                &r.videos[0].title,
-                &r.videos[0].url,
-                &r.videos[0].platform,
-                &r.videos[0].id,
-                &resp.bvid,
-                &resp.aid,
-                &resp.message,
-                &resp.code.to_string(),
-            ],
-        ).unwrap();
-    }
+            r.get_new_videos().await.unwrap();
+            r.ytdlp_download().await.unwrap();
+            let info = r.info;
+            std::thread::sleep(std::time::Duration::from_secs(10));
+            let resp = upload::bili_upload(info).await.unwrap();
+            conn.execute(
+                "INSERT INTO videos (streamer_author,title,url,platform,video_id,bv_id,aid,biliup_message,biliup_code) VALUES (?,?,?,?,?,?,?,?,?)",
+                &[
+                    v.0,
+                    &r.videos[0].title,
+                    &r.videos[0].url,
+                    &r.videos[0].platform,
+                    &r.videos[0].id,
+                    &resp.bvid,
+                    &resp.aid,
+                    &resp.message,
+                    &resp.code.to_string(),
+                ],
+            ).unwrap();
+        }).await;
     // panic!();
     // let v = r.get_new_videos().await.unwrap();
 

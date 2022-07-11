@@ -2,28 +2,26 @@ use crate::streamer::{Streamers, VideoInfo};
 use crate::upload::BiliUpload;
 use async_recursion::async_recursion;
 use async_trait::async_trait;
-use downloader::Downloader;
+use biliup::video::Video;
 use indicatif::{ProgressBar, ProgressStyle};
 use reqwest_middleware::ClientWithMiddleware;
 use serde_json::json;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::error::Error;
-use std::fmt::format;
 use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 use tokio_stream::StreamExt;
 use yaserde::de::from_str;
 use yaserde_derive::YaDeserialize;
-use biliup::video::Video;
 
 pub(crate) struct Youtube {
     pub client: ClientWithMiddleware,
     pub channel_id: String,
     pub videos: Vec<VideoInfo>,
     pub visitor_data: HashMap<String, String>,
-    pub info : BiliUpload,
+    pub info: BiliUpload,
 }
 const CLIENT_NAME: &str = "WEB";
 const CLIENT_VERSION: &str = "2.20220405";
@@ -47,8 +45,8 @@ impl Streamers for Youtube {
         // println!("{}", text);
         let loaded: Feed = from_str(&text)?;
         // println!("{:#?}", loaded.entry[0].group.content.url);
-        let mut size:usize = 5;
-        if loaded.entry.len()< 5{
+        let mut size: usize = 5;
+        if loaded.entry.len() < 5 {
             size = loaded.entry.len();
         }
         let new_videos: Vec<Entry> = loaded.entry[0..size].to_vec();
@@ -74,11 +72,10 @@ impl Streamers for Youtube {
         for i in self.videos.iter() {
             new_videos.push(i.id.clone());
         }
-        while new_videos.len() != 1{
+        while new_videos.len() != 1 {
             new_videos.pop();
         }
 
-        
         let mut stream = tokio_stream::iter(new_videos.into_iter());
         while let Some(v) = stream.next().await {
             let j = json!(
@@ -216,7 +213,7 @@ impl Streamers for Youtube {
 }
 
 impl Youtube {
-    pub async fn rustube_download(&mut self) -> Result<(), Box<dyn Error>> {
+    pub async fn _rustube_download(&mut self) -> Result<(), Box<dyn Error>> {
         let urls = self.get_real_video_url().await?;
         for url in urls.iter() {
             let yt_url = format!("https://www.youtube.com/watch?v={}", url.0);
@@ -234,7 +231,7 @@ impl Youtube {
             let mut command = Command::new("yt-dlp");
             command.arg("-o");
             let video_dir = "./videos/";
-            let file_dir_filename=format!("{}{}.mp4", video_dir,url.0);
+            let file_dir_filename = format!("{}{}.mp4", video_dir, url.0);
             command.arg(&file_dir_filename);
             command.arg("-f");
             command.arg("bestvideo[ext=mp4]+bestaudio[ext=m4a]");
@@ -252,7 +249,7 @@ impl Youtube {
                             filename: file_dir_filename.to_string(),
                             desc: "".to_string(),
                         });
-                        let res = String::from_utf8(res.stdout)?;
+                        let _res = String::from_utf8(res.stdout)?;
                     } else {
                     }
                 }
