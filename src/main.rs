@@ -1,13 +1,34 @@
+// #[macro_use]
+// extern crate lazy_static;
+
 use config::Config;
 use futures::StreamExt;
 use regex::Regex;
-use rusqlite::{Connection, Result};
+use std::sync::Arc;
 use std::{collections::HashMap, error::Error, path::Path};
 use streamer::Streamers;
+use tokio::sync::mpsc::{self, Receiver};
+use upload::BiliUpload;
 mod config;
+mod db;
 mod streamer;
 mod upload;
 mod youtube;
+
+// lazy_static!{
+//     static ref MPSC:(tokio::sync::mpsc::Sender<Arc<BiliUpload>>,tokio::sync::mpsc::Receiver<Arc<BiliUpload>>) = mpsc::channel(32);
+// }
+
+#[derive(Debug)]
+pub struct BiliupVideos {
+    pub biliupload: BiliUpload,
+    pub author: String,
+    pub title: String,
+    pub url: String,
+    pub platform: String,
+    pub video_id: String,
+}
+
 #[tokio::main]
 async fn main() {
     let cfg = load_config(Path::new("config.yaml")).unwrap();
@@ -19,70 +40,38 @@ async fn main() {
     //     info: upload::new(),
     // };
     let streamers = tokio_stream::iter(cfg.streamers.iter());
-
-    streamers.for_each_concurrent(2, |v|  async move {
-        let conn = Connection::open("./biliup.db").unwrap();
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS streamers (
-                id INTEGER PRIMARY KEY,
-                author TEXT NOT NULL UNIQUE
-            )",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS videos (
-                id INTEGER PRIMARY KEY,
-                streamer_author TEXT NOT NULL,
-                title TEXT NOT NULL,
-                url TEXT NOT NULL,
-                platform TEXT NOT NULL,
-                video_id TEXT NOT NULL,
-                bv_id TEXT NOT NULL,
-                aid TEXT NOT NULL,
-                biliup_message TEXT NOT NULL,
-                biliup_code TEXT NOT NULL,
-                created_at TIMESTAMP NOT NULL DEFAULT (datetime('now','localtime')),
-                updated_at TIMESTAMP NOT NULL DEFAULT (datetime('now','localtime')),
-                UNIQUE (url,video_id),
-                FOREIGN KEY(streamer_author) REFERENCES streamers(author)
-            )",
-            [],
-        )
-        .unwrap();
-        // 如果记录不存在,就插入,已经存在不插入
-        conn.execute(
-            "INSERT OR IGNORE INTO streamers (author) VALUES (?1)",
-            [v.0],
-        )
-        .unwrap();
-        let mut r = youtube::Youtube {
-            client: streamer::new_client(),
-            channel_id: v.1.url.clone(),
-            videos: Vec::new(),
-            visitor_data: HashMap::new(),
-            info: upload::new(),
-        };
+    let (tx, mut rx) = mpsc::channel(32);
+    let tx1 = tx.clone();
+    let db: db::DB = db::new();
+    streamers
+        .for_each_concurrent(5, |v| async {
+            println!("任务开始",);
+            let mut r = youtube::Youtube {
+                client: streamer::new_client(),
+                channel_id: v.1.url.clone(),
+                videos: Vec::new(),
+                visitor_data: HashMap::new(),
+                info: upload::new(),
+            };
+            db.insert_author(v.0.clone());
             r.get_new_videos().await.unwrap();
             r.ytdlp_download().await.unwrap();
             let info = r.info;
-            std::thread::sleep(std::time::Duration::from_secs(10));
-            let resp = upload::bili_upload(info).await.unwrap();
-            conn.execute(
-                "INSERT INTO videos (streamer_author,title,url,platform,video_id,bv_id,aid,biliup_message,biliup_code) VALUES (?,?,?,?,?,?,?,?,?)",
-                &[
-                    v.0,
-                    &r.videos[0].title,
-                    &r.videos[0].url,
-                    &r.videos[0].platform,
-                    &r.videos[0].id,
-                    &resp.bvid,
-                    &resp.aid,
-                    &resp.message,
-                    &resp.code.to_string(),
-                ],
-            ).unwrap();
-        }).await;
+            // let x = Arc::new(info);
+            let biliup_videos = BiliupVideos {
+                biliupload: info,
+                author: v.0.to_string(),
+                title: r.videos[0].title.clone(),
+                url: r.videos[0].url.clone(),
+                platform: r.videos[0].platform.clone(),
+                video_id: r.videos[0].id.clone(),
+            };
+            // let bv = Arc::new(biliup_videos);
+            tx1.send(biliup_videos).await.unwrap();
+            // std::thread::sleep(std::time::Duration::from_secs(10));
+        })
+        .await;
+    upload(rx).await;
     // panic!();
     // let v = r.get_new_videos().await.unwrap();
 
@@ -220,3 +209,13 @@ pub fn get_diff(old: Vec<String>, new: Vec<String>) -> Vec<String> {
 //     }
 // }
 // }
+
+pub async fn upload(mut rx: Receiver<BiliupVideos>) {
+    println!("upload");
+    while let Some(bv) = rx.recv().await {
+        std::thread::sleep(std::time::Duration::from_secs(10));
+        let resp = upload::bili_upload(&bv.biliupload).await.unwrap();
+        let db: db::DB = db::new();
+        db.insert_submit_info(bv.author, bv.title, bv.url, bv.platform, bv.video_id, resp.bvid, resp.aid, resp.message, resp.code.to_string());
+}
+}

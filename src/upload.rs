@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::path::Path;
 use std::time::Instant;
+use std::sync::Arc;
 #[derive(Debug)]
 pub struct BiliUpload {
     pub desc: String,
@@ -41,7 +42,7 @@ fn default_aid() -> String {
 
 
 
-pub async fn bili_upload(mut b: BiliUpload) -> Result<BiliUpRespone, Box<dyn Error>> {
+pub async fn bili_upload(b: &BiliUpload) -> Result<BiliUpRespone, Box<dyn Error>> {
     let client = &Client::new();
     // let client = crate::streamer::new_client();
 
@@ -73,7 +74,6 @@ pub async fn bili_upload(mut b: BiliUpload) -> Result<BiliUpRespone, Box<dyn Err
     // }
 
     println!("{:#?}", video);
-    b.title = b.videos[0].filename.to_string() + "三次测试";
     let _res = match Studio::builder()
         .desc(b.desc.clone())
         .dtime(b.dtime)
@@ -83,7 +83,7 @@ pub async fn bili_upload(mut b: BiliUpload) -> Result<BiliUpRespone, Box<dyn Err
         .source(b.source.clone())
         .tag(b.tag.clone())
         .tid(b.tid.clone())
-        .title(b.title.clone())
+        .title(b.videos[0].filename.to_string().clone())
         .videos(vec![video])
         .build()
         .submit(&login_info)

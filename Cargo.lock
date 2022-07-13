@@ -131,6 +131,7 @@ dependencies = [
  "downloader",
  "futures",
  "indicatif 0.16.2",
+ "lazy_static",
  "regex",
  "reqwest",
  "reqwest-middleware",
