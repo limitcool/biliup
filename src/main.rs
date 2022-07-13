@@ -4,7 +4,7 @@
 use config::Config;
 use futures::StreamExt;
 use regex::Regex;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::{collections::HashMap, error::Error, path::Path};
 use streamer::Streamers;
 use tokio::sync::mpsc::{self, Receiver};
@@ -32,17 +32,59 @@ pub struct BiliupVideos {
 #[tokio::main]
 async fn main() {
     let cfg = load_config(Path::new("config.yaml")).unwrap();
-    // let mut r = youtube::Youtube {
-    //     client: streamer::new_client(),
-    //     channel_id: "UCee3jrGUdb2ovrE7v4ncH3Q".to_string(),
-    //     videos: Vec::new(),
-    //     visitor_data: HashMap::new(),
-    //     info: upload::new(),
-    // };
+    let authors = tokio_stream::iter(cfg.streamers.iter().clone());
+    // let mut vec:Vec<String> = vec![];
+    let mut videos: Arc<Mutex<Vec<streamer::VideoInfo>>> = Arc::new(Mutex::new(vec![]));
+    authors
+        .for_each_concurrent(5, |v| async {
+            let db: db::DB = db::new();
+            let author_name = youtube::get_name_by_channel_id(
+                streamer::new_client(),
+                v.1.url.clone().to_string(),
+            )
+            .await
+            .unwrap();
+            db.insert_author(author_name.clone());
+
+            let mut r = youtube::Youtube {
+                client: streamer::new_client(),
+                channel_id: v.1.url.clone(),
+                videos: Vec::new(),
+                visitor_data: HashMap::new(),
+                info: upload::new(),
+            };
+            let vf = r.get_new_videos().await.unwrap();
+            for v in vf {
+                videos.lock().unwrap().push(v);
+            }
+        })
+        .await;
+    println!("{:?},{:?}", videos, videos.lock().unwrap().len());
+    for v in videos.lock().unwrap().iter() {
+        println!("{:?}", v.id);
+    }
+    let vi = videos.lock().unwrap().clone();
+    let vs = tokio_stream::iter(vi.iter());
+    vs.for_each_concurrent(5, |v| async {
+        let mut r = youtube::Youtube {
+            client: streamer::new_client(),
+            channel_id: v.channel_id.clone(),
+            videos: Vec::new(),
+            visitor_data: HashMap::new(),
+            info: upload::new(),
+        };
+        let vf = r.get_real_video_url().await.unwrap();
+        for v in vf {
+            println!("{:?}", v);
+        }
+        r.ytdlp_download().await.unwrap();
+    })
+    .await;
+    panic!();
+
     let streamers = tokio_stream::iter(cfg.streamers.iter());
     let (tx, mut rx) = mpsc::channel(32);
     let tx1 = tx.clone();
-    let db: db::DB = db::new();
     streamers
         .for_each_concurrent(5, |v| async {
             println!("任务开始",);
@@ -53,7 +95,6 @@ async fn main() {
                 visitor_data: HashMap::new(),
                 info: upload::new(),
             };
-            db.insert_author(v.0.clone());
             r.get_new_videos().await.unwrap();
             r.ytdlp_download().await.unwrap();
             let info = r.info;
@@ -216,6 +257,16 @@ pub async fn upload(mut rx: Receiver<BiliupVideos>) {
         std::thread::sleep(std::time::Duration::from_secs(10));
         let resp = upload::bili_upload(&bv.biliupload).await.unwrap();
         let db: db::DB = db::new();
-        db.insert_submit_info(bv.author, bv.title, bv.url, bv.platform, bv.video_id, resp.bvid, resp.aid, resp.message, resp.code.to_string());
-}
+        db.insert_submit_info(
+            bv.author,
+            bv.title,
+            bv.url,
+            bv.platform,
+            bv.video_id,
+            resp.bvid,
+            resp.aid,
+            resp.message,
+            resp.code.to_string(),
+        );
+    }
 }

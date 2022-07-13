@@ -13,6 +13,7 @@ pub struct VideoInfo {
     pub author: String,
     pub published: String,
     pub description: String,
+    pub channel_id: String,
     // pub thumbnail: String,
 }
 

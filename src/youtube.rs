@@ -59,6 +59,7 @@ impl Streamers for Youtube {
                 author: entry.author.name.clone(),
                 published: entry.published,
                 description: entry.group.description,
+                channel_id: self.channel_id.clone(),
             })
         }
         self.videos = videos.clone();
@@ -266,6 +267,24 @@ impl Youtube {
     }
 }
 
+pub async fn get_name_by_channel_id(
+    client: ClientWithMiddleware,
+    channel_id: String,
+) -> Result<String, Box<dyn Error>> {
+    let text = client
+        .get(format!(
+            "https://www.youtube.com/feeds/videos.xml?channel_id={}",
+            channel_id
+        ))
+        .send()
+        .await?
+        .text()
+        .await?;
+    // println!("{}", text);
+    let loaded: Feed = from_str(&text)?;
+    // println!("{:#?}", loaded.entry[0].group.content.url);
+    Ok(loaded.author.name.to_string())
+}
 #[derive(YaDeserialize, Debug, Clone, Default)]
 #[yaserde(
     rename = "feed",
@@ -275,8 +294,9 @@ impl Youtube {
   )]
 pub struct Feed {
     pub entry: Vec<Entry>,
-    // pub author: Author,
+    pub author: Author,
     pub title: String,
+    pub id: String,
     pub published: String,
 }
 #[derive(YaDeserialize, Debug, Clone, Default)]
