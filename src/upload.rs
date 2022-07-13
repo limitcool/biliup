@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::path::Path;
 use std::time::Instant;
-use std::sync::Arc;
 #[derive(Debug)]
 pub struct BiliUpload {
     pub desc: String,
@@ -37,10 +36,6 @@ pub struct BiliUpRespone {
 fn default_aid() -> String {
     "Err".to_string()
 }
-
-
-
-
 
 pub async fn bili_upload(b: &BiliUpload) -> Result<BiliUpRespone, Box<dyn Error>> {
     let client = &Client::new();
@@ -83,7 +78,7 @@ pub async fn bili_upload(b: &BiliUpload) -> Result<BiliUpRespone, Box<dyn Error>
         .source(b.source.clone())
         .tag(b.tag.clone())
         .tid(b.tid.clone())
-        .title(b.videos[0].filename.to_string().clone())
+        .title(b.title.clone())
         .videos(vec![video])
         .build()
         .submit(&login_info)

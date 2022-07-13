@@ -1,6 +1,6 @@
 // #[macro_use]
 // extern crate lazy_static;
-
+use biliup::video::{Subtitle, Video};
 use config::Config;
 use futures::StreamExt;
 use regex::Regex;
@@ -31,88 +31,108 @@ pub struct BiliupVideos {
 
 #[tokio::main]
 async fn main() {
+    let mut db: db::DB = db::new();
+    db.create_db().unwrap();
     let cfg = load_config(Path::new("config.yaml")).unwrap();
-    let authors = tokio_stream::iter(cfg.streamers.iter().clone());
-    // let mut vec:Vec<String> = vec![];
-    let mut videos: Arc<Mutex<Vec<streamer::VideoInfo>>> = Arc::new(Mutex::new(vec![]));
-    authors
-        .for_each_concurrent(5, |v| async {
-            let db: db::DB = db::new();
-            let author_name = youtube::get_name_by_channel_id(
-                streamer::new_client(),
-                v.1.url.clone().to_string(),
-            )
-            .await
-            .unwrap();
-            db.insert_author(author_name.clone());
+    let (tx, rx) = mpsc::channel(32);
+    tokio::spawn(async {
+        upload(rx).await;
+    });
+    let videos: Arc<Mutex<Vec<streamer::VideoInfo>>> = Arc::new(Mutex::new(vec![]));
+    loop {
+        let authors = tokio_stream::iter(cfg.streamers.iter().clone());
+        authors
+            .for_each_concurrent(5, |v| async {
+                let db: db::DB = db::new();
+                let author_name = youtube::get_name_by_channel_id(
+                    streamer::new_client(),
+                    v.1.url.clone().to_string(),
+                )
+                .await
+                .unwrap();
+                db.insert_author(author_name.clone());
 
-            let mut r = youtube::Youtube {
-                client: streamer::new_client(),
-                channel_id: v.1.url.clone(),
-                videos: Vec::new(),
-                visitor_data: HashMap::new(),
-                info: upload::new(),
-            };
-            let vf = r.get_new_videos().await.unwrap();
-            for v in vf {
-                videos.lock().unwrap().push(v);
-            }
-        })
-        .await;
-    println!("{:?},{:?}", videos, videos.lock().unwrap().len());
-    for v in videos.lock().unwrap().iter() {
-        println!("{:?}", v.id);
-    }
-    let vi = videos.lock().unwrap().clone();
-    let vs = tokio_stream::iter(vi.iter());
-    vs.for_each_concurrent(5, |v| async {
-        let mut r = youtube::Youtube {
-            client: streamer::new_client(),
-            channel_id: v.channel_id.clone(),
-            videos: Vec::new(),
-            visitor_data: HashMap::new(),
-            info: upload::new(),
-        };
-        let vf = r.get_real_video_url().await.unwrap();
-        for v in vf {
-            println!("{:?}", v);
+                let mut r = youtube::Youtube {
+                    client: streamer::new_client(),
+                    channel_id: v.1.url.clone(),
+                    videos: Vec::new(),
+                    visitor_data: HashMap::new(),
+                    info: upload::new(),
+                };
+                let vf = r.get_new_videos().await.unwrap();
+                for v in vf {
+                    let db: db::DB = db::new();
+                    db.insert_video_id(
+                        v.author.clone(),
+                        v.id.clone(),
+                        v.title.clone(),
+                        v.url.clone(),
+                        v.platform.clone(),
+                        "unknown".to_string(),
+                        "unknown".to_string(),
+                        "unknown".to_string(),
+                        "unknown".to_string(),
+                    );
+                    videos.lock().unwrap().push(v);
+                }
+            })
+            .await;
+        if videos.lock().unwrap().len() > 0 {
+            let vi = videos
+                .lock()
+                .unwrap()
+                .clone()
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>();
+            let vs = tokio_stream::iter(vi);
+            vs.for_each_concurrent(5, |v| async {
+                let _r = youtube::Youtube {
+                    client: streamer::new_client(),
+                    channel_id: v.channel_id.clone(),
+                    videos: Vec::new(),
+                    visitor_data: HashMap::new(),
+                    info: upload::new(),
+                };
+                let dr = youtube::ytdlp_download(v).await;
+                let bu = BiliUpload {
+                    desc: dr.description.clone(),
+                    dynamic: "".to_string(),
+                    subtitle: Subtitle::default(),
+                    tag: "biliup,initcool".to_string(),
+                    title: dr.title.clone(),
+                    videos: vec![Video {
+                        title: Some(dr.bilireq.title.clone()),
+                        filename: dr.bilireq.filename.clone(),
+                        desc: "".to_string(),
+                    }],
+                    copyright: 2,
+                    source: "https://github.com/limitcool/biliup".to_string(),
+                    tid: 17,
+                    cover: "".to_string(),
+                    dtime: None,
+                };
+                let biliup_videos = BiliupVideos {
+                    biliupload: bu,
+                    author: dr.author.clone(),
+                    title: dr.title.clone(),
+                    url: dr.url.clone(),
+                    platform: dr.platform.clone(),
+                    video_id: dr.id.clone(),
+                };
+                println!("我出来了,发送任务",);
+                tx.clone().send(biliup_videos).await.unwrap();
+            })
+            .await;
+            videos.lock().unwrap().clear();
+            
         }
-        r.ytdlp_download().await.unwrap();
-    })
-    .await;
-    panic!();
+        tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+    }
+    // panic!();
 
-    let streamers = tokio_stream::iter(cfg.streamers.iter());
-    let (tx, mut rx) = mpsc::channel(32);
-    let tx1 = tx.clone();
-    streamers
-        .for_each_concurrent(5, |v| async {
-            println!("任务开始",);
-            let mut r = youtube::Youtube {
-                client: streamer::new_client(),
-                channel_id: v.1.url.clone(),
-                videos: Vec::new(),
-                visitor_data: HashMap::new(),
-                info: upload::new(),
-            };
-            r.get_new_videos().await.unwrap();
-            r.ytdlp_download().await.unwrap();
-            let info = r.info;
-            // let x = Arc::new(info);
-            let biliup_videos = BiliupVideos {
-                biliupload: info,
-                author: v.0.to_string(),
-                title: r.videos[0].title.clone(),
-                url: r.videos[0].url.clone(),
-                platform: r.videos[0].platform.clone(),
-                video_id: r.videos[0].id.clone(),
-            };
-            // let bv = Arc::new(biliup_videos);
-            tx1.send(biliup_videos).await.unwrap();
-            // std::thread::sleep(std::time::Duration::from_secs(10));
-        })
-        .await;
-    upload(rx).await;
+    // tokio::spawn(upload(rx));
+
     // panic!();
     // let v = r.get_new_videos().await.unwrap();
 
@@ -254,19 +274,20 @@ pub fn get_diff(old: Vec<String>, new: Vec<String>) -> Vec<String> {
 pub async fn upload(mut rx: Receiver<BiliupVideos>) {
     println!("upload");
     while let Some(bv) = rx.recv().await {
-        std::thread::sleep(std::time::Duration::from_secs(10));
         let resp = upload::bili_upload(&bv.biliupload).await.unwrap();
         let db: db::DB = db::new();
-        db.insert_submit_info(
-            bv.author,
-            bv.title,
-            bv.url,
-            bv.platform,
-            bv.video_id,
+        db.update_submit_info(
             resp.bvid,
             resp.aid,
             resp.message,
             resp.code.to_string(),
+            bv.video_id,
         );
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
     }
+    println!("upload end");
+}
+
+pub async fn test() {
+    print!("test");
 }

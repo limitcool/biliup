@@ -1,5 +1,6 @@
 use crate::streamer::{Streamers, VideoInfo};
 use crate::upload::BiliUpload;
+use crate::{db, get_diff};
 use async_recursion::async_recursion;
 use async_trait::async_trait;
 use biliup::video::Video;
@@ -21,8 +22,30 @@ pub(crate) struct Youtube {
     pub channel_id: String,
     pub videos: Vec<VideoInfo>,
     pub visitor_data: HashMap<String, String>,
+    #[allow(dead_code)]
     pub info: BiliUpload,
 }
+
+#[derive(Debug, Clone)]
+pub struct DownloadResponse {
+    pub id: String,
+    pub title: String,
+    pub url: String,
+    pub platform: String,
+    pub author: String,
+    pub published: String,
+    pub description: String,
+    pub channel_id: String,
+    pub bilireq: BiliupReq,
+}
+
+#[derive(Debug, Clone)]
+pub struct BiliupReq {
+    pub title: String,
+    pub filename: String,
+    pub desc: String,
+}
+
 const CLIENT_NAME: &str = "WEB";
 const CLIENT_VERSION: &str = "2.20220405";
 // const CLIENT_NAME: &str = "ANDROID";
@@ -44,25 +67,41 @@ impl Streamers for Youtube {
             .await?;
         // println!("{}", text);
         let loaded: Feed = from_str(&text)?;
+        let author = loaded.author.name.clone();
         // println!("{:#?}", loaded.entry[0].group.content.url);
-        let mut size: usize = 5;
-        if loaded.entry.len() < 5 {
+        let mut size: usize = 3;
+        if loaded.entry.len() < 3 {
             size = loaded.entry.len();
         }
         let new_videos: Vec<Entry> = loaded.entry[0..size].to_vec();
+        let old = db::new().get_new_videos(loaded.author.name, size as i32);
+        let mut new = vec![];
+        for v in new_videos.clone() {
+            new.push(v.video_id.clone());
+        }
+
+        let diff = get_diff(old, new);
+
         for entry in new_videos {
-            videos.push(VideoInfo {
-                id: entry.video_id.clone(),
-                title: entry.title.clone(),
-                url: entry.group.content.url.clone(),
-                platform: "youtube".to_string(),
-                author: entry.author.name.clone(),
-                published: entry.published,
-                description: entry.group.description,
-                channel_id: self.channel_id.clone(),
-            })
+            for mv in diff.clone() {
+                if mv == entry.video_id {
+                    videos.push(VideoInfo {
+                        id: entry.video_id.clone(),
+                        title: entry.title.clone(),
+                        url: entry.group.content.url.clone(),
+                        platform: "youtube".to_string(),
+                        author: entry.author.name.clone(),
+                        published: entry.published.clone(),
+                        description: entry.group.description.clone(),
+                        channel_id: self.channel_id.clone(),
+                    })
+                }
+            }
         }
         self.videos = videos.clone();
+        if videos.len() == 0 {
+            println!("{}: No new videos",author);
+        }
         return Ok(videos);
     }
 
@@ -225,6 +264,7 @@ impl Youtube {
         }
         Ok(())
     }
+    #[allow(dead_code)]
     #[async_recursion]
     pub async fn ytdlp_download(&mut self) -> Result<String, Box<dyn Error>> {
         let urls = self.get_real_video_url().await?;
@@ -285,6 +325,64 @@ pub async fn get_name_by_channel_id(
     // println!("{:#?}", loaded.entry[0].group.content.url);
     Ok(loaded.author.name.to_string())
 }
+
+pub async fn ytdlp_download(vf: VideoInfo) -> DownloadResponse {
+    let bilireq = BiliupReq {
+        title: vf.id.to_string().clone(),
+        filename: "".to_string(),
+        desc: "".to_string(),
+    };
+    let mut result = DownloadResponse {
+        id: vf.id.clone(),
+        title: vf.title.to_string(),
+        url: vf.url.to_string(),
+        platform: vf.platform.to_string(),
+        author: vf.author.to_string(),
+        published: vf.published.to_string(),
+        description: vf.description.to_string(),
+        channel_id: vf.channel_id.to_string(),
+        bilireq: bilireq,
+    };
+
+    let mut command = Command::new("yt-dlp");
+    command.arg("-o");
+    let video_dir = "./videos/";
+    let file_dir_filename = format!("{}{}.mp4", video_dir, vf.id);
+    command.arg(&file_dir_filename);
+    command.arg("-f");
+    command.arg("bestvideo[ext=mp4]+bestaudio[ext=m4a]");
+    command.arg(vf.id.to_string());
+    command.arg("-R");
+    command.arg("infinite");
+    command.arg("--fragment-retries");
+    command.arg("infinite");
+    match command.status().unwrap().code() {
+        Some(code) => {
+            if code == 0 {
+                let _res = command.output().unwrap();
+                // result
+                // result.bilireq.desc ="".to_string();
+                result.bilireq.filename = file_dir_filename.to_string();
+                // result.bilireq.title = Some(vf.id.to_string());
+                // result
+                // let _res = String::from_utf8(res.stdout)?;
+            } else {
+                std::thread::sleep(std::time::Duration::from_secs(30));
+
+                // ytdlp_download(vf);
+            }
+        }
+        None => {
+            println!("yt-dlp not found");
+
+            std::thread::sleep(std::time::Duration::from_secs(30));
+
+            // ytdlp_download(vf);
+        }
+    }
+    result
+}
+
 #[derive(YaDeserialize, Debug, Clone, Default)]
 #[yaserde(
     rename = "feed",

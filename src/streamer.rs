@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
-use std::{error::Error, time::Duration, collections::HashMap};
+use std::{collections::HashMap, error::Error, time::Duration};
 
 #[derive(Debug, Clone, Default)]
 pub struct VideoInfo {
@@ -20,7 +20,7 @@ pub struct VideoInfo {
 #[async_trait]
 pub trait Streamers {
     async fn get_new_videos(&mut self) -> Result<Vec<VideoInfo>, Box<dyn Error>>;
-    async fn get_real_video_url(&mut self) -> Result<HashMap<String,String>, Box<dyn Error>>;
+    async fn get_real_video_url(&mut self) -> Result<HashMap<String, String>, Box<dyn Error>>;
     async fn download(&mut self) -> Result<(), Box<dyn Error>>;
 }
 
