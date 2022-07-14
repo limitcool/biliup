@@ -2,10 +2,13 @@ GoogleToken: QUFFLUhqbWg4QWY3OXBVOEE2Wml0VmRpVFdub21jM2psQXw=
 Streamers:
   Delaney:
     Url: UCee3jrGUdb2ovrE7v4ncH3Q
-    Test: testtwitch
+    Platform: Youtube
   Fireship:
     Url: UCsBjURrPoezykLs9EqgamOA
-    Test: testyoutube
-  # Tew:
-  #   Url: UCpfWIOPj5ZjgaY42ES_VmOg
-  #   Test: testyoutube
+    Platform: youtube
+  md:
+    Url: maximilian_dood
+    Platform: Twitch
+  go1:
+    Url: cyclops_go1
+    Platform: Twitch

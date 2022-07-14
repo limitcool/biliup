@@ -38,3 +38,26 @@ pub fn new_client() -> ClientWithMiddleware {
         .build();
     return client;
 }
+
+pub fn _select_streamers(cfg: crate::config::Streamers) -> Box<dyn Streamers> {
+    match cfg.platform.to_lowercase().as_str() {
+        "youtube" => Box::new(crate::youtube::new(cfg.url)),
+        "twitch" => Box::new(crate::twitch::new(cfg.url)),
+        _ => Box::new(Nop::default()),
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Nop {}
+#[async_trait]
+impl Streamers for Nop {
+    async fn get_new_videos(&mut self) -> Result<Vec<VideoInfo>, Box<dyn Error>> {
+        Ok(vec![])
+    }
+    async fn get_real_video_url(&mut self) -> Result<HashMap<String, String>, Box<dyn Error>> {
+        Ok(HashMap::new())
+    }
+    async fn download(&mut self) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
+}

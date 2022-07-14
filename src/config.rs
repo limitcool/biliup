@@ -11,5 +11,5 @@ pub struct Config {
 #[serde(rename_all = "PascalCase")]
 pub struct Streamers {
     pub url: String,
-    pub test: String,
+    pub platform: String,
 }

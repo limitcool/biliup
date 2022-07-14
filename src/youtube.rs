@@ -1,5 +1,5 @@
-use crate::streamer::{Streamers, VideoInfo};
-use crate::upload::BiliUpload;
+use crate::streamer::{Streamers, VideoInfo, self};
+use crate::upload::{BiliUpload, self};
 use crate::{db, get_diff};
 use async_recursion::async_recursion;
 use async_trait::async_trait;
@@ -17,7 +17,7 @@ use tokio_stream::StreamExt;
 use yaserde::de::from_str;
 use yaserde_derive::YaDeserialize;
 
-pub(crate) struct Youtube {
+pub struct Youtube {
     pub client: ClientWithMiddleware,
     pub channel_id: String,
     pub videos: Vec<VideoInfo>,
@@ -100,7 +100,7 @@ impl Streamers for Youtube {
         }
         self.videos = videos.clone();
         if videos.len() == 0 {
-            println!("{}: No new videos",author);
+            println!("Paltform: youtube,{}: No new videos", author.clone());
         }
         return Ok(videos);
     }
@@ -381,6 +381,16 @@ pub async fn ytdlp_download(vf: VideoInfo) -> DownloadResponse {
         }
     }
     result
+}
+
+pub fn new(channel_id: String) -> Youtube {
+    return Youtube {
+        client: streamer::new_client(),
+        channel_id: channel_id,
+        videos: Vec::new(),
+        visitor_data: HashMap::new(),
+        info: upload::new(),
+    };
 }
 
 #[derive(YaDeserialize, Debug, Clone, Default)]
