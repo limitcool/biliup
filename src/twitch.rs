@@ -87,7 +87,7 @@ impl Streamers for Twitch {
         let db = crate::db::new();
         let old = db.get_new_videos(v.author.clone(), 1);
         if get_diff(old, vec![v.id.clone()]).len() == 0 {
-            println!("Paltform: {},{}: No new videos",v.platform, v.author.clone());
+            println!("Platform: [{}],{}: No new videos",v.platform, v.author.clone());
             return Ok(vec![]);
         }
         Ok(vec![v])
