@@ -1,5 +1,5 @@
-use crate::streamer::{Streamers, VideoInfo, self};
-use crate::upload::{BiliUpload, self};
+use crate::streamer::{self, Streamers, VideoInfo};
+use crate::upload::{self, BiliUpload};
 use crate::{db, get_diff};
 use async_recursion::async_recursion;
 use async_trait::async_trait;
@@ -100,7 +100,7 @@ impl Streamers for Youtube {
         }
         self.videos = videos.clone();
         if videos.len() == 0 {
-            println!("Paltform: youtube,{}: No new videos", author.clone());
+            println!("platform: [youtube],{}: No new videos", author.clone());
         }
         return Ok(videos);
     }

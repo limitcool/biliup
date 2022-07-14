@@ -6,7 +6,7 @@ use config::Config;
 use futures::StreamExt;
 use youtube::DownloadResponse;
 
-use std::{collections::HashMap, error::Error, path::Path};
+use std::{error::Error, path::Path};
 use streamer::{Streamers, VideoInfo};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use upload::BiliUpload;
